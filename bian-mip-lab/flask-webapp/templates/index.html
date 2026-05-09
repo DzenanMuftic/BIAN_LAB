@@ -36,7 +36,7 @@
           <form method="post" action="/transfer" class="space-y-4">
             <div>
               <label class="block text-sm text-slate-300 mb-1">Source Account</label>
-              <select name="source_account" onchange="this.form.method='get'; this.form.action='/'; this.form.submit();" class="w-full rounded-md bg-slate-800 border border-slate-600 px-3 py-2 text-slate-100">
+                <select name="source_account" onchange="window.location='/?account=' + encodeURIComponent(this.value) + '&recipient={{ selected_recipient }}&tab={{ selected_tab }}';" class="w-full rounded-md bg-slate-800 border border-slate-600 px-3 py-2 text-slate-100">
                 {% for acc in accounts %}
                   <option value="{{ acc.account_id }}" {% if acc.account_id == selected_account %}selected{% endif %}>{{ acc.account_id }}</option>
                 {% endfor %}
@@ -71,7 +71,16 @@
         </section>
 
         <section class="lg:col-span-2 rounded-xl border border-slate-700 bg-slate-900/60 p-5">
-          <h2 class="text-xl font-semibold mb-4 text-cyan-200">Balance and History</h2>
+          <h2 class="text-xl font-semibold mb-4 text-cyan-200">Balance and Transactions</h2>
+
+          <div class="mb-5 flex gap-2">
+            <a href="/?account={{ selected_account }}&recipient={{ selected_recipient }}&tab=history" class="rounded-md px-3 py-2 text-sm font-semibold border {% if selected_tab == 'history' %}bg-cyan-600 border-cyan-500 text-slate-950{% else %}bg-slate-800 border-slate-600 text-slate-200 hover:bg-slate-700{% endif %}">
+              History
+            </a>
+            <a href="/?account={{ selected_account }}&recipient={{ selected_recipient }}&tab=flow" class="rounded-md px-3 py-2 text-sm font-semibold border {% if selected_tab == 'flow' %}bg-cyan-600 border-cyan-500 text-slate-950{% else %}bg-slate-800 border-slate-600 text-slate-200 hover:bg-slate-700{% endif %}">
+              Last Transaction Flow
+            </a>
+          </div>
 
           <div class="rounded-lg border border-slate-700 bg-slate-800/60 p-4 mb-6">
             <div class="text-sm text-slate-400">Current Account</div>
@@ -85,37 +94,79 @@
             {% endif %}
           </div>
 
-          <h3 class="text-lg font-semibold mb-3 text-slate-200">Transaction History (latest 50)</h3>
-          <div class="overflow-x-auto">
-            <table class="w-full text-sm">
-              <thead>
-                <tr class="text-left border-b border-slate-700 text-slate-400">
-                  <th class="py-2 pr-3">Date</th>
-                  <th class="py-2 pr-3">Booking ID</th>
-                  <th class="py-2 pr-3">Direction</th>
-                  <th class="py-2 pr-3">Amount</th>
-                  <th class="py-2 pr-3">Operator</th>
-                  <th class="py-2 pr-3">Description</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for tx in history %}
-                  <tr class="border-b border-slate-800">
-                    <td class="py-2 pr-3">{{ tx.booking_date }}</td>
-                    <td class="py-2 pr-3">{{ tx.booking_id }}</td>
-                    <td class="py-2 pr-3 {% if tx.direction == 'OUT' %}text-rose-300{% else %}text-emerald-300{% endif %}">{{ tx.direction }}</td>
-                    <td class="py-2 pr-3 font-mono">{{ '%.2f'|format(tx.amount) }} {{ tx.currency }}</td>
-                    <td class="py-2 pr-3">{{ tx.operator }}</td>
-                    <td class="py-2 pr-3">{{ tx.description }}</td>
+          {% if selected_tab == 'history' %}
+            <h3 class="text-lg font-semibold mb-3 text-slate-200">Transaction History (latest 50)</h3>
+            <div class="overflow-x-auto">
+              <table class="w-full text-sm">
+                <thead>
+                  <tr class="text-left border-b border-slate-700 text-slate-400">
+                    <th class="py-2 pr-3">Date</th>
+                    <th class="py-2 pr-3">Booking ID</th>
+                    <th class="py-2 pr-3">Direction</th>
+                    <th class="py-2 pr-3">Amount</th>
+                    <th class="py-2 pr-3">Operator</th>
+                    <th class="py-2 pr-3">Description</th>
                   </tr>
-                {% else %}
-                  <tr>
-                    <td colspan="6" class="py-4 text-slate-400">No transactions yet for this account.</td>
-                  </tr>
+                </thead>
+                <tbody>
+                  {% for tx in history %}
+                    <tr class="border-b border-slate-800">
+                      <td class="py-2 pr-3">{{ tx.booking_date }}</td>
+                      <td class="py-2 pr-3">{{ tx.booking_id }}</td>
+                      <td class="py-2 pr-3 {% if tx.direction == 'OUT' %}text-rose-300{% else %}text-emerald-300{% endif %}">{{ tx.direction }}</td>
+                      <td class="py-2 pr-3 font-mono">{{ '%.2f'|format(tx.amount) }} {{ tx.currency }}</td>
+                      <td class="py-2 pr-3">{{ tx.operator }}</td>
+                      <td class="py-2 pr-3">{{ tx.description }}</td>
+                    </tr>
+                  {% else %}
+                    <tr>
+                      <td colspan="6" class="py-4 text-slate-400">No transactions yet for this account.</td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% else %}
+            <h3 class="text-lg font-semibold mb-3 text-slate-200">Last Transaction Flow</h3>
+
+            {% if last_flow and last_flow.booking %}
+              <div class="mb-4 rounded-lg border border-slate-700 bg-slate-800/60 p-4 text-sm">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div><span class="text-slate-400">Booking ID:</span> <span class="font-mono">{{ last_flow.booking.booking_id }}</span></div>
+                  <div><span class="text-slate-400">Date:</span> {{ last_flow.booking.booking_date }}</div>
+                  <div><span class="text-slate-400">Amount:</span> <span class="font-mono">{{ last_flow.booking.amount }} {{ last_flow.booking.currency }}</span></div>
+                  <div><span class="text-slate-400">Operator:</span> {{ last_flow.booking.operator }}</div>
+                  <div class="md:col-span-2"><span class="text-slate-400">Description:</span> {{ last_flow.booking.description }}</div>
+                  {% if last_flow.booking.payment_reference %}
+                    <div class="md:col-span-2"><span class="text-slate-400">Payment Reference:</span> <span class="font-mono">{{ last_flow.booking.payment_reference }}</span></div>
+                  {% endif %}
+                </div>
+              </div>
+
+              <div class="space-y-3">
+                {% for step in last_flow.checkpoints %}
+                  <div class="rounded-lg border px-4 py-3 {% if step.state == 'ok' %}border-emerald-700 bg-emerald-900/20{% elif step.state == 'warn' %}border-amber-700 bg-amber-900/20{% else %}border-sky-700 bg-sky-900/20{% endif %}">
+                    <div class="font-semibold {% if step.state == 'ok' %}text-emerald-200{% elif step.state == 'warn' %}text-amber-200{% else %}text-sky-200{% endif %}">{{ step.name }}</div>
+                    <div class="mt-1 text-sm text-slate-300">{{ step.detail }}</div>
+                  </div>
                 {% endfor %}
-              </tbody>
-            </table>
-          </div>
+              </div>
+
+              {% if last_flow.operator_log %}
+                <div class="mt-4 rounded-lg border border-slate-700 bg-slate-800/60 p-4 text-sm">
+                  <div class="text-slate-300 font-semibold mb-2">Matching OPERATOR_LOG entry</div>
+                  <div><span class="text-slate-400">LOG_ID:</span> {{ last_flow.operator_log.log_id }}</div>
+                  <div><span class="text-slate-400">EVENT_TIME:</span> {{ last_flow.operator_log.event_time }}</div>
+                  <div><span class="text-slate-400">ACTION:</span> {{ last_flow.operator_log.action }}</div>
+                  <div><span class="text-slate-400">DETAILS:</span> {{ last_flow.operator_log.details }}</div>
+                </div>
+              {% endif %}
+            {% else %}
+              <div class="rounded-lg border border-slate-700 bg-slate-800/60 p-4 text-slate-300">
+                No transaction found yet for this account. Submit a payment order and open this tab again.
+              </div>
+            {% endif %}
+          {% endif %}
         </section>
       </div>
     {% endif %}

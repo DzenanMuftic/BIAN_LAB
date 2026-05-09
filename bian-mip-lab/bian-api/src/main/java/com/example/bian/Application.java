@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -128,10 +129,36 @@ class BianController {
     }
 
     @PostMapping("/bian/v14/payment-order/{accountId}/initiate")
+    @Transactional
     public ResponseEntity<Map<String, Object>> initiatePayment(
         @PathVariable String accountId,
         @Valid @RequestBody PaymentInitiateRequest request
     ) {
+        if (accountId.equals(request.counterpartyIban())) {
+            return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(Map.of(
+                "serviceDomain", "PaymentOrder",
+                "actionTerm", "Initiate",
+                "status", "Rejected",
+                "reason", "Counterparty account must be different from source account",
+                "accountId", accountId,
+                "counterpartyIban", request.counterpartyIban(),
+                "semanticVersion", "BIAN-14.0"
+            ));
+        }
+
+        BigDecimal recipientCurrent = readAmountOrNull(Application.CACHE_CURRENT_PREFIX + request.counterpartyIban());
+        if (recipientCurrent == null) {
+            return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(Map.of(
+                "serviceDomain", "PaymentOrder",
+                "actionTerm", "Initiate",
+                "status", "Rejected",
+                "reason", "Counterparty account not found",
+                "accountId", accountId,
+                "counterpartyIban", request.counterpartyIban(),
+                "semanticVersion", "BIAN-14.0"
+            ));
+        }
+
         BigDecimal current = readAmountOrZero(Application.CACHE_CURRENT_PREFIX + accountId);
         if (current.compareTo(request.amount()) < 0) {
             return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(Map.of(
@@ -162,21 +189,40 @@ class BianController {
 
         jdbcTemplate.update(
             """
+            INSERT INTO BOOKINGS (ACCOUNT_ID, BOOKING_DATE, AMOUNT, CURRENCY, OPERATOR, DESCRIPTION)
+            VALUES (?, SYSDATE, ?, ?, ?, ?)
+            """,
+            request.counterpartyIban(),
+            request.amount(),
+            request.currency(),
+            "BIAN_API",
+            "PAYMENT_ORDER_IN:" + paymentReference + ";FROM:" + accountId
+        );
+
+        jdbcTemplate.update(
+            """
             INSERT INTO OPERATOR_LOG (OPERATOR, ACTION, DETAILS)
             VALUES (?, ?, ?)
             """,
             "BIAN_API",
             "PaymentOrder.Initiate",
-            "accountId=" + accountId + ";paymentReference=" + paymentReference
+            "accountId=" + accountId + ";counterpartyIban=" + request.counterpartyIban() + ";amount=" + request.amount().toPlainString() + ";paymentReference=" + paymentReference
         );
 
-        BigDecimal bookingsSum = readAmountOrZero(Application.CACHE_BOOKINGS_PREFIX + accountId)
+        BigDecimal sourceBookingsSum = readAmountOrZero(Application.CACHE_BOOKINGS_PREFIX + accountId)
             .subtract(request.amount())
             .setScale(2, RoundingMode.HALF_UP);
-        BigDecimal newCurrent = current.subtract(request.amount()).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal sourceCurrent = current.subtract(request.amount()).setScale(2, RoundingMode.HALF_UP);
 
-        redisTemplate.opsForValue().set(Application.CACHE_BOOKINGS_PREFIX + accountId, bookingsSum.toPlainString());
-        redisTemplate.opsForValue().set(Application.CACHE_CURRENT_PREFIX + accountId, newCurrent.toPlainString());
+        BigDecimal recipientBookingsSum = readAmountOrZero(Application.CACHE_BOOKINGS_PREFIX + request.counterpartyIban())
+            .add(request.amount())
+            .setScale(2, RoundingMode.HALF_UP);
+        BigDecimal recipientNewCurrent = recipientCurrent.add(request.amount()).setScale(2, RoundingMode.HALF_UP);
+
+        redisTemplate.opsForValue().set(Application.CACHE_BOOKINGS_PREFIX + accountId, sourceBookingsSum.toPlainString());
+        redisTemplate.opsForValue().set(Application.CACHE_CURRENT_PREFIX + accountId, sourceCurrent.toPlainString());
+        redisTemplate.opsForValue().set(Application.CACHE_BOOKINGS_PREFIX + request.counterpartyIban(), recipientBookingsSum.toPlainString());
+        redisTemplate.opsForValue().set(Application.CACHE_CURRENT_PREFIX + request.counterpartyIban(), recipientNewCurrent.toPlainString());
 
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(Map.ofEntries(
             Map.entry("serviceDomain", "PaymentOrder"),
@@ -188,9 +234,22 @@ class BianController {
             Map.entry("currency", request.currency()),
             Map.entry("counterpartyIban", request.counterpartyIban()),
             Map.entry("description", request.description() != null ? request.description() : ""),
-            Map.entry("balanceAfterInitiation", newCurrent.toPlainString()),
+            Map.entry("balanceAfterInitiation", sourceCurrent.toPlainString()),
+            Map.entry("counterpartyBalanceAfter", recipientNewCurrent.toPlainString()),
             Map.entry("semanticVersion", "BIAN-14.0")
         ));
+    }
+
+    private BigDecimal readAmountOrNull(String key) {
+        String value = redisTemplate.opsForValue().get(key);
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return new BigDecimal(value).setScale(2, RoundingMode.HALF_UP);
+        } catch (NumberFormatException ex) {
+            return null;
+        }
     }
 
     private BigDecimal readAmountOrZero(String key) {
