@@ -1,0 +1,24 @@
+server:
+  port: 8080
+
+spring:
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:oracle:thin:@localhost:1521/ORCLPDB1}
+    username: ${SPRING_DATASOURCE_USERNAME:BANKING}
+    password: ${SPRING_DATASOURCE_PASSWORD:banking_pwd}
+    driver-class-name: oracle.jdbc.OracleDriver
+  kafka:
+    bootstrap-servers: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:localhost:29092}
+    consumer:
+      group-id: bian-balance-calculator
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+
+app:
+  kafka:
+    bookings-topic: ${APP_KAFKA_BOOKINGS_TOPIC:banking.ORCLPDB1.BANKING.BOOKINGS}

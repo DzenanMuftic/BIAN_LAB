@@ -1,0 +1,27 @@
+DELIVERY PLAN - BIAN 14.0 Mobile Instant Payment Lab
+
+1) Infrastructure baseline
+- Create Docker Compose with Oracle 19c, Kafka (KRaft), Debezium, Valkey, and BIAN API.
+- Enforce a strict total memory footprint under 6 GB for lab usage.
+
+2) Oracle CDC readiness
+- Enable ARCHIVELOG and supplemental logging.
+- Create C##DBZUSER with LogMiner and dictionary read permissions.
+- Provision BANKING schema in ORCLPDB1 and create EOD_BALANCE, BOOKINGS, OPERATOR_LOG.
+
+3) Debezium Oracle connector
+- Configure LogMiner against CDB while capturing tables from PDB.
+- Restrict capture scope to exactly 3 tables.
+
+4) BIAN API implementation
+- Implement CurrentAccount.GetBalance and PaymentOrder.Initiate endpoints.
+- On startup, prime Valkey from EOD_BALANCE and same-day BOOKINGS sum.
+- Consume BOOKINGS CDC events and update near-real-time balance cache.
+
+5) Operational scripts
+- setup.sh to prepare folders and permissions.
+- register-connector.sh to POST connector configuration to Debezium REST.
+
+6) Lab handoff check
+- Verify all deliverables exist on disk.
+- Ensure scripts are executable and configuration is internally consistent.

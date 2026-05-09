@@ -1,0 +1,109 @@
+services:
+  oracle19c:
+    image: gvenzl/oracle-xe:21-slim
+    container_name: oracle19c
+    ports:
+      - "1521:1521"
+    environment:
+      ORACLE_PASSWORD: OraclePwd123!
+    volumes:
+      - ./oracle/init:/container-entrypoint-initdb.d
+      - oracle-data:/opt/oracle/oradata
+    mem_limit: 3072m
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: kafka
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: "broker,controller"
+      KAFKA_LISTENERS: "INTERNAL://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,EXTERNAL://0.0.0.0:29092"
+      KAFKA_ADVERTISED_LISTENERS: "INTERNAL://kafka:9092,EXTERNAL://localhost:29092"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:9093"
+      KAFKA_INTER_BROKER_LISTENER_NAME: "INTERNAL"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+      KAFKA_JVM_PERFORMANCE_OPTS: "-Xms512m -Xmx768m"
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    mem_limit: 1024m
+
+  debezium:
+    image: quay.io/debezium/connect:2.7
+    container_name: debezium
+    depends_on:
+      - kafka
+      - oracle19c
+    ports:
+      - "8083:8083"
+    environment:
+      BOOTSTRAP_SERVERS: kafka:9092
+      GROUP_ID: debezium-connect-cluster
+      CONFIG_STORAGE_TOPIC: debezium_connect_configs
+      OFFSET_STORAGE_TOPIC: debezium_connect_offsets
+      STATUS_STORAGE_TOPIC: debezium_connect_statuses
+      KEY_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      KAFKA_HEAP_OPTS: "-Xms256m -Xmx512m"
+    volumes:
+      - ./ojdbc8.jar:/kafka/libs/ojdbc8.jar:ro
+      - ./debezium:/debezium/config
+    mem_limit: 768m
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    container_name: valkey
+    ports:
+      - "6380:6379"
+    command: ["valkey-server", "--save", "", "--appendonly", "no", "--maxmemory", "192mb", "--maxmemory-policy", "allkeys-lru"]
+    mem_limit: 256m
+
+  bian-api:
+    build:
+      context: ./bian-api
+    container_name: bian-api
+    depends_on:
+      - oracle19c
+      - kafka
+      - valkey
+    ports:
+      - "8080:8080"
+    environment:
+      JAVA_TOOL_OPTIONS: "-Xms128m -Xmx384m"
+      SPRING_DATASOURCE_URL: "jdbc:oracle:thin:@oracle19c:1521/XEPDB1"
+      SPRING_DATASOURCE_USERNAME: "BANKING"
+      SPRING_DATASOURCE_PASSWORD: "banking_pwd"
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
+      SPRING_DATA_REDIS_HOST: "valkey"
+      SPRING_DATA_REDIS_PORT: "6379"
+      APP_KAFKA_BOOKINGS_TOPIC: "banking.XEPDB1.BANKING.BOOKINGS"
+    mem_limit: 512m
+
+  flask-webapp:
+    build:
+      context: ./flask-webapp
+    container_name: flask-webapp
+    depends_on:
+      - oracle19c
+      - bian-api
+    ports:
+      - "5000:5000"
+    environment:
+      FLASK_SECRET_KEY: "mip-lab-web-secret"
+      BIAN_API_URL: "http://bian-api:8080"
+      DB_USER: "BANKING"
+      DB_PASSWORD: "banking_pwd"
+      DB_DSN: "oracle19c:1521/XEPDB1"
+    mem_limit: 256m
+
+volumes:
+  oracle-data:
+  kafka-data:

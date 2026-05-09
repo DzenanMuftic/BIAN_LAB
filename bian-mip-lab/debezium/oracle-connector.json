@@ -1,0 +1,24 @@
+{
+  "name": "oracle19c-banking-connector",
+  "config": {
+    "connector.class": "io.debezium.connector.oracle.OracleConnector",
+    "tasks.max": "1",
+    "database.hostname": "oracle19c",
+    "database.port": "1521",
+    "database.user": "C##DBZUSER",
+    "database.password": "dbz_password",
+    "database.dbname": "XE",
+    "database.pdb.name": "XEPDB1",
+    "topic.prefix": "banking",
+    "snapshot.mode": "initial",
+    "table.include.list": "BANKING.EOD_BALANCE,BANKING.BOOKINGS,BANKING.OPERATOR_LOG",
+    "log.mining.strategy": "online_catalog",
+    "schema.history.internal.kafka.bootstrap.servers": "kafka:9092",
+    "schema.history.internal.kafka.topic": "schemahistory.banking",
+    "include.schema.changes": "false",
+    "decimal.handling.mode": "string",
+    "time.precision.mode": "connect",
+    "max.batch.size": "512",
+    "max.queue.size": "2048"
+  }
+}
